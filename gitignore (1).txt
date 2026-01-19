@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SolProp_ML cloned repo (temporary)
+SolProp_ML/
+Machine_learning_models/
+models.zip
+
+# Keep output folder but ignore temporary files
+output/*.tmp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
