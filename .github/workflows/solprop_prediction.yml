@@ -3,109 +3,67 @@ name: SolProp ML Prediction (Real)
 on:
   workflow_dispatch:
   push:
-    paths:
-      - 'input/**'
+    branches: [ main ]
+  # Keep/remove other triggers as needed
+
+permissions:
+  contents: write
 
 jobs:
-  predict:
+  run-solprop:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        lfs: true
-      
-    - name: Set up Conda
-      uses: conda-incubator/setup-miniconda@v3
-      with:
-        auto-update-conda: true
-        python-version: 3.8
-        channels: conda-forge,defaults
-        channel-priority: flexible
-        activate-environment: env_solprop
-        
-    - name: Clone SolProp_ML repository
-      shell: bash -l {0}
-      run: |
-        git clone https://github.com/fhvermei/SolProp_ML.git
-        
-    - name: Create conda environment from environment.yml
-      shell: bash -l {0}
-      run: |
-        cd SolProp_ML
-        conda env create -f environment.yml
-        
-    - name: Install descriptastorus and SolProp_ML
-      shell: bash -l {0}
-      run: |
-        conda activate env_solprop
-        pip install git+https://github.com/bp-kelley/descriptastorus
-        cd SolProp_ML
-        pip install -e .
-        
-    - name: Extract and setup ML models
-      shell: bash -l {0}
-      run: |
-        # Extract the local SolProp model file
-        unzip SolProp_v1.2.zip
-        
-        # Verify extraction was successful
-        if [ ! -d "SolProp_v1.2/Machine_learning_models" ]; then
-          echo "Error: Machine_learning_models directory not found after extraction"
-          ls -la
-          exit 1
-        fi
-        
-        # Copy models to the correct location
-        mkdir -p SolProp_ML/solvation_predictor/trained_models/
-        cp -r SolProp_v1.2/Machine_learning_models/Gsolv SolProp_ML/solvation_predictor/trained_models/
-        cp -r SolProp_v1.2/Machine_learning_models/Hsolv SolProp_ML/solvation_predictor/trained_models/
-        cp -r SolProp_v1.2/Machine_learning_models/Saq SolProp_ML/solvation_predictor/trained_models/
-        
-        echo "Models installed successfully"
-        ls -la SolProp_ML/solvation_predictor/trained_models/
-        
-    - name: Verify installation
-      shell: bash -l {0}
-      run: |
-        conda activate env_solprop
-        cd SolProp_ML
-        python -c "from solvation_predictor import calculate_solubility; print('✓ SolProp_ML imported successfully')"
-        
-    - name: Create output directory
-      run: mkdir -p output
-        
-    - name: Run predictions
-      shell: bash -l {0}
-      run: |
-        conda activate env_solprop
-        export PYTHONPATH="${PYTHONPATH}:${PWD}/SolProp_ML"
-        python scripts/run_prediction_real.py
-        
-    - name: List output files
-      run: |
-        echo "=== Generated output files ==="
-        ls -lh output/
-        
-    - name: Upload results as artifact
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: solprop-results-${{ github.run_number }}
-        path: output/
-        retention-days: 30
-        
-    - name: Commit and push results
-      run: |
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        git pull origin ${{ github.ref_name }} --rebase
-        git add output/
-        if git diff --staged --quiet; then
-          echo "No changes to commit"
-        else
-          git commit -m "Add SolProp prediction results [run #${{ github.run_number }}]"
-          git push
-        fi
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ---- Your existing setup steps (conda/python/deps/download zip/etc.) ----
+      # Keep your current working steps here.
+      # Example:
+      # - name: Set up Python
+      #   uses: actions/setup-python@v5
+      #   with:
+      #     python-version: "3.11"
+      #
+      # - name: Run prediction script
+      #   run: python your_script.py
+
+      - name: Show generated output files
+        run: |
+          echo "Listing output directory..."
+          ls -la output || true
+
+      - name: Commit output files
+        id: commit_outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add output/
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Add SolProp prediction outputs [skip ci]"
+            echo "committed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push changes
+        if: steps.commit_outputs.outputs.committed == 'true'
+        run: |
+          # For branch runs this pushes back to same branch.
+          # If permissions are missing (e.g., fork/read-only token), this may fail.
+          git push origin HEAD:${GITHUB_REF_NAME}
+
+      - name: Upload outputs as artifact (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solprop-outputs-${{ github.run_number }}
+          path: |
+            output/*.csv
+            output/*.txt
+          if-no-files-found: warn
