@@ -26,6 +26,13 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         lfs: true
 
+    - name: Free disk space on runner
+      run: |
+        echo "Before:"; df -h /
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+        sudo docker image prune --all --force >/dev/null 2>&1 || true
+        echo "After:"; df -h /
+
     - name: Check model zip was downloaded from Git LFS
       run: |
         ls -lh SolProp_v1.2.zip
@@ -51,9 +58,25 @@ jobs:
 
     - name: Create conda environment from environment.yml
       shell: bash -l {0}
+      env:
+        PIP_NO_CACHE_DIR: "1"
       run: |
         cd SolProp_ML
+        # environment.yml installs torch 1.6.0 via conda, then its pip section tries to
+        # replace it with torch==1.3.1 (735 MB), which fails on the runner and rolls back.
+        # Keep conda's torch and drop the pip torch pin.
+        sed -i -E '/^[[:space:]]*-[[:space:]]*torch==/d' environment.yml
+        echo "=== environment.yml used ==="
+        cat environment.yml
         conda env create -n env_solprop -f environment.yml
+        conda clean --all --yes
+        df -h /
+
+    - name: Show torch version
+      shell: bash -l {0}
+      run: |
+        conda activate env_solprop
+        python -c "import torch; print('torch', torch.__version__)"
 
     - name: Install descriptastorus and SolProp_ML
       shell: bash -l {0}
