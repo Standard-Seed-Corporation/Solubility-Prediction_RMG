@@ -1,0 +1,13 @@
+SolProp ML - Prediction Summary
+============================================================
+
+Input file: solubility_data_no_stereo.csv
+Timestamp: 2026-11-16 05:58:54
+
+Output files:
+  - solubility_data_no_stereo_results_20261116_055712.csv
+  - solubility_data_no_stereo_detailed_20261116_055712.csv
+  - solubility_data_no_stereo_properties_20261116_055712.csv
+  - solubility_data_no_stereo_log_20261116_055712.log
+
+Status: SUCCESS ✓
