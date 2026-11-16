@@ -5,38 +5,56 @@ on:
   push:
     paths:
       - 'input/**'
+      - 'scripts/**'
+      - '.github/workflows/solprop_prediction.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: solprop-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   predict:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         lfs: true
-      
+
+    - name: Check model zip was downloaded from Git LFS
+      run: |
+        ls -lh SolProp_v1.2.zip
+        if ! unzip -tq SolProp_v1.2.zip >/dev/null 2>&1; then
+          echo "::error::SolProp_v1.2.zip is not a real zip (probably a Git LFS pointer). Check LFS storage/bandwidth quota for this repo."
+          head -c 300 SolProp_v1.2.zip
+          exit 1
+        fi
+
     - name: Set up Conda
       uses: conda-incubator/setup-miniconda@v3
       with:
         auto-update-conda: true
-        python-version: 3.8
+        auto-activate-base: true
+        activate-environment: ""
         channels: conda-forge,defaults
         channel-priority: flexible
-        activate-environment: env_solprop
-        
+
     - name: Clone SolProp_ML repository
       shell: bash -l {0}
       run: |
-        git clone https://github.com/fhvermei/SolProp_ML.git
-        
+        git clone --depth 1 https://github.com/fhvermei/SolProp_ML.git
+
     - name: Create conda environment from environment.yml
       shell: bash -l {0}
       run: |
         cd SolProp_ML
-        conda env create -f environment.yml
-        
+        conda env create -n env_solprop -f environment.yml
+
     - name: Install descriptastorus and SolProp_ML
       shell: bash -l {0}
       run: |
@@ -44,51 +62,49 @@ jobs:
         pip install git+https://github.com/bp-kelley/descriptastorus
         cd SolProp_ML
         pip install -e .
-        
-    - name: Extract and setup ML models
+
+    - name: Extract and set up ML models
       shell: bash -l {0}
       run: |
-        # Extract the local SolProp model file
-        unzip SolProp_v1.2.zip
-        
-        # Verify extraction was successful
+        unzip -q SolProp_v1.2.zip
+
         if [ ! -d "SolProp_v1.2/Machine_learning_models" ]; then
-          echo "Error: Machine_learning_models directory not found after extraction"
+          echo "::error::Machine_learning_models directory not found after extraction"
           ls -la
           exit 1
         fi
-        
-        # Copy models to the correct location
+
         mkdir -p SolProp_ML/solvation_predictor/trained_models/
         cp -r SolProp_v1.2/Machine_learning_models/Gsolv SolProp_ML/solvation_predictor/trained_models/
         cp -r SolProp_v1.2/Machine_learning_models/Hsolv SolProp_ML/solvation_predictor/trained_models/
         cp -r SolProp_v1.2/Machine_learning_models/Saq SolProp_ML/solvation_predictor/trained_models/
-        
+
         echo "Models installed successfully"
         ls -la SolProp_ML/solvation_predictor/trained_models/
-        
+
     - name: Verify installation
       shell: bash -l {0}
       run: |
         conda activate env_solprop
         cd SolProp_ML
-        python -c "from solvation_predictor import calculate_solubility; print('✓ SolProp_ML imported successfully')"
-        
+        python -c "from solvation_predictor import calculate_solubility; print('SolProp_ML imported successfully')"
+
     - name: Create output directory
       run: mkdir -p output
-        
+
     - name: Run predictions
       shell: bash -l {0}
       run: |
         conda activate env_solprop
         export PYTHONPATH="${PYTHONPATH}:${PWD}/SolProp_ML"
         python scripts/run_prediction_real.py
-        
+
     - name: List output files
+      if: always()
       run: |
         echo "=== Generated output files ==="
-        ls -lh output/
-        
+        ls -lh output/ || true
+
     - name: Upload results as artifact
       uses: actions/upload-artifact@v4
       if: always()
@@ -96,16 +112,16 @@ jobs:
         name: solprop-results-${{ github.run_number }}
         path: output/
         retention-days: 30
-        
+
     - name: Commit and push results
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
-        git pull origin ${{ github.ref_name }} --rebase
         git add output/
         if git diff --staged --quiet; then
           echo "No changes to commit"
         else
           git commit -m "Add SolProp prediction results [run #${{ github.run_number }}]"
-          git push
+          git pull --rebase origin "${{ github.ref_name }}"
+          git push origin HEAD:"${{ github.ref_name }}"
         fi
